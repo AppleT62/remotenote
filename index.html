@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RemoteNote</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<style>
+  :root {
+    --bg: #f4f1ea;
+    --surface: #fffdf8;
+    --ink: #1d1b18;
+    --muted: #6f685d;
+    --line: #ddd5c6;
+    --accent: #d2491f;
+    --accent-ink: #fff;
+    --ok: #2f7d4f;
+    --err: #b3261e;
+    --shadow: 0 1px 0 #fff inset, 0 10px 30px -18px rgba(40, 30, 10, .35);
+    --mono: "IBM Plex Mono", ui-monospace, monospace;
+    --sans: "Noto Sans KR", system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #151412; --surface: #1f1d1a; --ink: #efe9df; --muted: #a39b8d;
+      --line: #36322c; --accent: #ff7a4d; --accent-ink: #1a0d07;
+      --ok: #6cc690; --err: #ff8a80;
+      --shadow: 0 10px 30px -18px rgba(0, 0, 0, .8);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--bg); color: var(--ink);
+    font-family: var(--sans); line-height: 1.55;
+    display: flex; justify-content: center; padding: 32px 16px 48px;
+  }
+  main { width: 100%; max-width: 560px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 20px; }
+  h1 { font-family: var(--mono); font-size: 1.15rem; letter-spacing: .02em; margin: 0; }
+  h1 span { color: var(--accent); }
+  .hint { color: var(--muted); font-size: .85rem; }
+
+  .tabs { display: grid; grid-template-columns: 1fr 1fr; background: var(--line); border-radius: 12px; padding: 4px; margin-bottom: 16px; }
+  .tabs button {
+    border: 0; background: transparent; color: var(--muted); font: 600 .95rem var(--sans);
+    padding: 10px; border-radius: 9px; cursor: pointer; transition: background .15s, color .15s;
+  }
+  .tabs button[aria-selected="true"] { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+  .tabs button:focus-visible, .btn:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 20px; box-shadow: var(--shadow); }
+  [hidden] { display: none !important; }
+
+  textarea {
+    width: 100%; min-height: 150px; resize: vertical; border: 1px solid var(--line); border-radius: 10px;
+    background: var(--bg); color: var(--ink); font: 1rem/1.6 var(--sans); padding: 12px 14px;
+  }
+  .row { display: flex; gap: 10px; align-items: center; justify-content: space-between; margin-top: 12px; }
+  .count { font-family: var(--mono); font-size: .8rem; color: var(--muted); }
+
+  .btn {
+    border: 0; border-radius: 10px; padding: 12px 20px; font: 700 1rem var(--sans); cursor: pointer;
+    background: var(--accent); color: var(--accent-ink); transition: transform .1s, filter .15s;
+  }
+  .btn:hover { filter: brightness(1.06); }
+  .btn:active { transform: translateY(1px); }
+  .btn:disabled { opacity: .45; cursor: default; filter: none; transform: none; }
+  .btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+
+  .code-display { text-align: center; padding: 8px 0 4px; }
+  .code {
+    font-family: var(--mono); font-weight: 600; font-size: clamp(2.6rem, 14vw, 4rem);
+    letter-spacing: .18em; padding-left: .18em; user-select: all;
+  }
+  .meter { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; margin: 14px 0 10px; }
+  .meter i { display: block; height: 100%; background: var(--accent); transform-origin: left; transition: transform 1s linear; }
+
+  .code-input {
+    width: 100%; text-align: center; font: 600 2.2rem var(--mono); letter-spacing: .3em; padding: 14px 0 14px .3em;
+    border: 1px solid var(--line); border-radius: 12px; background: var(--bg); color: var(--ink); text-transform: uppercase;
+  }
+  .code-input::placeholder { color: var(--line); }
+
+  .status { min-height: 1.5em; margin-top: 12px; font-size: .92rem; color: var(--muted); text-align: center; }
+  .status.ok { color: var(--ok); }
+  .status.err { color: var(--err); }
+
+  .received { margin-top: 16px; }
+  .received pre {
+    white-space: pre-wrap; word-break: break-word; margin: 0 0 12px; font: 1rem/1.6 var(--sans);
+    background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; max-height: 50vh; overflow: auto;
+  }
+  footer { margin-top: 18px; font-size: .78rem; color: var(--muted); text-align: center; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>remote<span>note</span></h1>
+    <span class="hint">코드 하나로 문장 옮기기</span>
+  </header>
+
+  <div class="tabs" role="tablist">
+    <button role="tab" id="tab-send" aria-selected="true" aria-controls="panel-send">보내기</button>
+    <button role="tab" id="tab-recv" aria-selected="false" aria-controls="panel-recv">받기</button>
+  </div>
+
+  <section id="panel-send" class="card" role="tabpanel" aria-labelledby="tab-send">
+    <div id="send-compose">
+      <textarea id="send-text" maxlength="2000" placeholder="공유할 문장을 붙여넣으세요"></textarea>
+      <div class="row">
+        <span class="count" id="send-count">0 / 2000</span>
+        <button class="btn" id="send-btn" disabled>전송</button>
+      </div>
+    </div>
+    <div id="send-waiting" hidden>
+      <div class="code-display">
+        <div class="hint">다른 기기에서 이 코드를 입력하세요</div>
+        <div class="code" id="send-code">-----</div>
+      </div>
+      <div class="meter"><i id="send-meter"></i></div>
+      <div class="row">
+        <span class="count" id="send-left">60초</span>
+        <button class="btn ghost" id="send-cancel">취소</button>
+      </div>
+    </div>
+    <div class="status" id="send-status" role="status"></div>
+  </section>
+
+  <section id="panel-recv" class="card" role="tabpanel" aria-labelledby="tab-recv" hidden>
+    <input id="recv-code" class="code-input" maxlength="5" autocomplete="off" autocapitalize="characters"
+           spellcheck="false" placeholder="•••••" aria-label="5자리 코드">
+    <div class="status" id="recv-status" role="status"></div>
+    <div class="received" id="recv-result" hidden>
+      <pre id="recv-text"></pre>
+      <div class="row">
+        <button class="btn ghost" id="recv-again">다른 코드</button>
+        <button class="btn" id="recv-copy">복사</button>
+      </div>
+    </div>
+  </section>
+
+  <footer>문장은 서버에 저장되지 않고 두 기기 사이에서 암호화되어 직접 전달됩니다. 보내는 화면은 받을 때까지 열어 두세요.</footer>
+</main>
+
+<script>
+'use strict';
+
+// ---- 설정 ----
+const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // 헷갈리는 0 O 1 I L 제외
+const CODE_LENGTH = 5;
+const CODE_TTL_SEC = 60;
+const RECEIVE_TIMEOUT_MS = 12000;
+const MAX_ID_RETRIES = 5;
+const PEER_ID_PREFIX = 'remotenote-v1-';
+const KDF_SALT = 'remotenote-v1-salt';
+const KDF_ITERATIONS = 100000;
+
+const $ = (id) => document.getElementById(id);
+const enc = new TextEncoder();
+const dec = new TextDecoder();
+
+// ---- 코드 / 암호화 ----
+function generateCode() {
+  const bytes = crypto.getRandomValues(new Uint8Array(CODE_LENGTH));
+  // 31^5 공간에서 거의 균등하게 뽑기 위해 rejection sampling
+  let out = '';
+  for (let i = 0; out.length < CODE_LENGTH; i++) {
+    const b = i < bytes.length ? bytes[i] : crypto.getRandomValues(new Uint8Array(1))[0];
+    if (b < 248) out += CODE_ALPHABET[b % CODE_ALPHABET.length];
+  }
+  return out;
+}
+
+function normalizeCode(raw) {
+  return raw.toUpperCase().split('').filter((c) => CODE_ALPHABET.includes(c)).join('').slice(0, CODE_LENGTH);
+}
+
+const toHex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+const toB64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
+const fromB64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+
+// 시그널링 서버에는 코드 원문 대신 해시만 노출
+async function peerIdFor(code) {
+  const digest = await crypto.subtle.digest('SHA-256', enc.encode('id:' + code));
+  return PEER_ID_PREFIX + toHex(digest).slice(0, 32);
+}
+
+async function keyFor(code) {
+  const base = await crypto.subtle.importKey('raw', enc.encode(code), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt: enc.encode(KDF_SALT), iterations: KDF_ITERATIONS, hash: 'SHA-256' },
+    base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+}
+
+async function encryptText(code, text) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await keyFor(code), enc.encode(text));
+  return { v: 1, iv: toB64(iv), ct: toB64(ct) };
+}
+
+async function decryptText(code, payload) {
+  if (!payload || payload.v !== 1 || typeof payload.iv !== 'string' || typeof payload.ct !== 'string') {
+    throw new Error('bad-payload');
+  }
+  const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: fromB64(payload.iv) }, await keyFor(code), fromB64(payload.ct));
+  return dec.decode(pt);
+}
+
+function openPeer(id) {
+  return new Promise((resolve, reject) => {
+    const peer = id ? new Peer(id, { debug: 0 }) : new Peer({ debug: 0 });
+    const onError = (err) => { peer.destroy(); reject(err); };
+    peer.once('error', onError);
+    peer.once('open', () => { peer.off('error', onError); resolve(peer); });
+  });
+}
+
+function setStatus(el, msg, kind = '') {
+  el.textContent = msg;
+  el.className = 'status' + (kind ? ' ' + kind : '');
+}
+
+// ---- 탭 ----
+function selectTab(name) {
+  const isSend = name === 'send';
+  $('tab-send').setAttribute('aria-selected', String(isSend));
+  $('tab-recv').setAttribute('aria-selected', String(!isSend));
+  $('panel-send').hidden = !isSend;
+  $('panel-recv').hidden = isSend;
+  if (!isSend) $('recv-code').focus();
+}
+$('tab-send').addEventListener('click', () => selectTab('send'));
+$('tab-recv').addEventListener('click', () => selectTab('recv'));
+
+// ---- 보내기 ----
+const sendState = { peer: null, timer: null };
+
+$('send-text').addEventListener('input', () => {
+  const len = $('send-text').value.length;
+  $('send-count').textContent = `${len} / 2000`;
+  $('send-btn').disabled = $('send-text').value.trim() === '';
+});
+
+function stopSending() {
+  clearInterval(sendState.timer);
+  sendState.timer = null;
+  const peer = sendState.peer;
+  sendState.peer = null; // destroy 중 발생하는 disconnected 이벤트가 재접속하지 않도록 먼저 비움
+  if (peer) peer.destroy();
+  $('send-waiting').hidden = true;
+  $('send-compose').hidden = false;
+  $('send-btn').disabled = $('send-text').value.trim() === '';
+}
+
+async function claimCode() {
+  for (let attempt = 0; attempt < MAX_ID_RETRIES; attempt++) {
+    const code = generateCode();
+    try {
+      return { code, peer: await openPeer(await peerIdFor(code)) };
+    } catch (err) {
+      if (err.type !== 'unavailable-id') throw err; // 드물게 코드가 겹치면 새로 뽑기
+    }
+  }
+  throw new Error('code-exhausted');
+}
+
+function startCountdown(onExpire) {
+  const deadline = Date.now() + CODE_TTL_SEC * 1000;
+  const tick = () => {
+    const left = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+    $('send-left').textContent = `${left}초`;
+    $('send-meter').style.transform = `scaleX(${left / CODE_TTL_SEC})`;
+    if (left === 0) onExpire();
+  };
+  tick();
+  sendState.timer = setInterval(tick, 250);
+}
+
+async function startSending() {
+  const text = $('send-text').value.trim();
+  if (!text) return;
+  $('send-btn').disabled = true;
+  setStatus($('send-status'), '코드 만드는 중…');
+
+  let claimed;
+  try {
+    claimed = await claimCode();
+  } catch (err) {
+    console.error('[send] claim failed', err);
+    setStatus($('send-status'), '연결 서버에 접속하지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요.', 'err');
+    $('send-btn').disabled = false;
+    return;
+  }
+
+  const { code, peer } = claimed;
+  const payload = await encryptText(code, text);
+  sendState.peer = peer;
+  let delivered = false;
+
+  $('send-code').textContent = code;
+  $('send-compose').hidden = true;
+  $('send-waiting').hidden = false;
+  setStatus($('send-status'), '');
+  startCountdown(() => {
+    stopSending();
+    setStatus($('send-status'), '시간이 지나 코드가 만료됐어요. 다시 전송해 주세요.', 'err');
+  });
+
+  peer.on('connection', (conn) => {
+    if (delivered) { conn.close(); return; } // 1회용: 첫 수신자에게만 전달
+    conn.on('open', () => {
+      if (delivered) { conn.close(); return; }
+      delivered = true;
+      conn.send(payload);
+      const finish = () => {
+        stopSending();
+        setStatus($('send-status'), '전달 완료! 코드는 이제 사용할 수 없어요.', 'ok');
+      };
+      conn.on('data', (msg) => { if (msg === 'ack') finish(); });
+      setTimeout(finish, 4000); // ack가 없어도 정리
+    });
+  });
+
+  peer.on('disconnected', () => { if (sendState.peer === peer && !peer.destroyed) peer.reconnect(); });
+  peer.on('error', (err) => console.error('[send] peer error', err));
+}
+
+$('send-btn').addEventListener('click', startSending);
+$('send-cancel').addEventListener('click', () => { stopSending(); setStatus($('send-status'), '취소했어요.'); });
+
+// ---- 받기 ----
+let receiving = false;
+
+function resetReceive() {
+  $('recv-result').hidden = true;
+  $('recv-code').value = '';
+  $('recv-code').disabled = false;
+  setStatus($('recv-status'), '');
+  $('recv-code').focus();
+}
+
+async function receive(code) {
+  receiving = true;
+  $('recv-code').disabled = true;
+  setStatus($('recv-status'), '찾는 중…');
+
+  let peer;
+  const fail = (msg) => {
+    if (peer) peer.destroy();
+    receiving = false;
+    $('recv-code').disabled = false;
+    $('recv-code').select();
+    setStatus($('recv-status'), msg, 'err');
+  };
+
+  try {
+    peer = await openPeer(null);
+  } catch (err) {
+    console.error('[recv] peer open failed', err);
+    fail('연결 서버에 접속하지 못했어요. 인터넷 연결을 확인해 주세요.');
+    return;
+  }
+
+  let done = false;
+  const timeout = setTimeout(() => { if (!done) { done = true; fail('응답이 없어요. 코드를 확인하거나 보내는 화면이 열려 있는지 확인해 주세요.'); } }, RECEIVE_TIMEOUT_MS);
+
+  peer.on('error', (err) => {
+    if (done) return;
+    done = true;
+    clearTimeout(timeout);
+    console.error('[recv] peer error', err);
+    fail(err.type === 'peer-unavailable' ? '없거나 만료된 코드예요.' : '연결에 실패했어요. 다시 시도해 주세요.');
+  });
+
+  const conn = peer.connect(await peerIdFor(code), { reliable: true });
+  conn.on('data', async (payload) => {
+    if (done) return;
+    done = true;
+    clearTimeout(timeout);
+    try {
+      const text = await decryptText(code, payload);
+      conn.send('ack');
+      $('recv-text').textContent = text;
+      $('recv-result').hidden = false;
+      setStatus($('recv-status'), '받았어요!', 'ok');
+      receiving = false;
+      setTimeout(() => peer.destroy(), 500);
+    } catch (err) {
+      console.error('[recv] decrypt failed', err);
+      fail('내용을 풀지 못했어요. 다시 전송해 달라고 해 주세요.');
+    }
+  });
+  conn.on('close', () => { if (!done) { done = true; clearTimeout(timeout); fail('이미 사용됐거나 만료된 코드예요.'); } });
+}
+
+$('recv-code').addEventListener('input', () => {
+  const code = normalizeCode($('recv-code').value);
+  $('recv-code').value = code;
+  if (code.length === CODE_LENGTH && !receiving) receive(code);
+});
+
+$('recv-copy').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText($('recv-text').textContent);
+    setStatus($('recv-status'), '복사했어요.', 'ok');
+  } catch {
+    const range = document.createRange();
+    range.selectNodeContents($('recv-text'));
+    getSelection().removeAllRanges();
+    getSelection().addRange(range);
+    setStatus($('recv-status'), '자동 복사가 막혀 있어요. 선택된 글을 길게 눌러 복사해 주세요.');
+  }
+});
+$('recv-again').addEventListener('click', resetReceive);
+
+// ---- 시작 ----
+if (!window.crypto?.subtle) {
+  document.querySelector('main').insertAdjacentHTML('beforeend',
+    '<p class="status err">이 페이지는 https 주소에서만 동작해요.</p>');
+}
+// 터치 기기(휴대폰)는 받기 탭부터
+if (matchMedia('(pointer: coarse)').matches) selectTab('recv');
+window.addEventListener('pagehide', () => { if (sendState.peer) sendState.peer.destroy(); });
+</script>
+</body>
+</html>
